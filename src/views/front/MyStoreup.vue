@@ -24,6 +24,7 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import http from '@/utils/http'
+import authStorage from '@/utils/auth'
 
 const list = ref([])
 const total = ref(0)
@@ -31,7 +32,7 @@ const page = ref(1)
 const getImg = (v) => v ? (v.startsWith('http') ? v : `/api/file/download/${v}`) : ''
 
 const loadData = async () => {
-  const uid = localStorage.getItem('userid')
+  const uid = authStorage.get('userid')
   const res = await http.get('/favorite/list', { params: { page: page.value, limit: 12, userid: uid } })
   list.value = res.data?.data?.list || []
   total.value = res.data?.data?.total || 0

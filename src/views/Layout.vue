@@ -128,11 +128,12 @@ import {
   HomeFilled, User, Reading, ShoppingCart, Document,
   ChatDotRound, Fold, Expand, UserFilled, ArrowDown
 } from '@element-plus/icons-vue'
+import authStorage from '@/utils/auth'
 
 const router = useRouter()
 const isCollapse = ref(false)
 const isMobile = ref(false)
-const role = localStorage.getItem('role') || 'admin'
+const role = authStorage.get('role') || 'admin'
 const roleMap = { admin: '管理员', yonghu: '用户' }
 const roleName = computed(() => roleMap[role] || role)
 
@@ -151,7 +152,7 @@ const checkMobile = () => {
 
 const handleCommand = (cmd) => {
   if (cmd === 'logout') {
-    localStorage.clear()
+    authStorage.clear()
     router.push('/login')
     return
   }

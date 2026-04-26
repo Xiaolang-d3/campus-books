@@ -159,6 +159,7 @@ import { ElMessage } from 'element-plus'
 import { Camera, Upload, Document, Star, Location, Wallet, Sell, Check } from '@element-plus/icons-vue'
 import http from '@/utils/http'
 import { resolveAvatarUrl, getDefaultAvatars } from '@/utils/avatar'
+import authStorage from '@/utils/auth'
 
 const router = useRouter()
 
@@ -218,14 +219,12 @@ const quickActions = computed(() => [
 ])
 
 const uploadUrl = '/api/file/upload'
-const uploadHeaders = {
-  Authorization: `Bearer ${localStorage.getItem('token') || ''}`
-}
+const uploadHeaders = authStorage.authHeader()
 
 const getImg = (v) => resolveAvatarUrl(v)
 
 const loadUserInfo = async () => {
-  const uid = localStorage.getItem('userid')
+  const uid = authStorage.get('userid')
   const { data: res } = await http.get(`/yonghu/info/${uid}`)
   if (res.code === 0 && res.data) {
     form.value = {
@@ -245,7 +244,7 @@ const loadUserInfo = async () => {
 }
 
 const loadStats = async () => {
-  const uid = localStorage.getItem('userid')
+  const uid = authStorage.get('userid')
   try {
     const [ordersRes, favRes, addrRes, booksRes] = await Promise.all([
       http.get('/order/page', { params: { page: 1, limit: 1, viewType: 'buy' } }),
@@ -316,7 +315,7 @@ const saveAvatar = async () => {
     
     if (res.code === 0) {
       form.value.avatar = tempAvatar.value
-      localStorage.setItem('avatar', tempAvatar.value)
+      authStorage.set('avatar', tempAvatar.value)
       ElMessage.success('头像更新成功')
       showUploadDialog.value = false
       tempAvatar.value = ''
@@ -345,7 +344,7 @@ const save = async () => {
       phone: form.value.phone,
     })
     if (res.code === 0) {
-      localStorage.setItem('username', form.value.name)
+      authStorage.set('username', form.value.name)
       ElMessage.success('保存成功')
     } else {
       ElMessage.error(res.msg || '保存失败')

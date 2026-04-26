@@ -18,28 +18,28 @@
         <template #default>
           <div v-if="orderInfo.order_no" class="order-info">
             <div class="info-row">
-              <span class="label">订单号：</span>
+              <span class="label">订单编号</span>
               <span class="value">{{ orderInfo.order_no }}</span>
             </div>
             <div class="info-row">
-              <span class="label">商品名称：</span>
+              <span class="label">书籍名称</span>
               <span class="value">{{ orderInfo.book_title }}</span>
             </div>
             <div class="info-row">
-              <span class="label">购买数量：</span>
+              <span class="label">购买数量</span>
               <span class="value">{{ orderInfo.quantity }}</span>
             </div>
             <div class="info-row">
-              <span class="label">收货地址：</span>
+              <span class="label">收货地址</span>
               <span class="value">{{ orderInfo.receiver_address }}</span>
             </div>
             <div class="info-row">
-              <span class="label">收货人：</span>
+              <span class="label">收货人</span>
               <span class="value">{{ orderInfo.receiver_name }} {{ orderInfo.receiver_phone }}</span>
             </div>
             <div class="total-row">
-              <span class="label">应付金额：</span>
-              <span class="amount">¥{{ orderInfo.total_amount }}</span>
+              <span class="label">应付金额</span>
+              <span class="amount">￥{{ Number(orderInfo.total_amount || 0).toFixed(2) }}</span>
             </div>
           </div>
         </template>
@@ -47,65 +47,47 @@
 
       <el-divider />
 
-      <!-- 支付方式选择 -->
-      <div class="payment-methods">
-        <div class="method-title">选择支付方式</div>
-        <el-radio-group v-model="paymentMethod" class="method-list">
-          <el-radio value="balance" border>
-            <div class="method-item">
-              <el-icon class="method-icon"><Wallet /></el-icon>
-              <div class="method-info">
-                <div class="method-name">余额支付</div>
-                <div class="method-desc">当前余额：¥{{ balance.toFixed(2) }}</div>
-              </div>
+      <div class="payment-method">
+        <div class="method-title">支付方式</div>
+        <div class="balance-method">
+          <div class="method-item">
+            <el-icon class="method-icon"><Wallet /></el-icon>
+            <div class="method-info">
+              <div class="method-name">余额支付</div>
+              <div class="method-desc">当前余额：￥{{ Number(balance || 0).toFixed(2) }}</div>
             </div>
-          </el-radio>
-          <el-radio value="alipay" border disabled>
-            <div class="method-item">
-              <el-icon class="method-icon"><CreditCard /></el-icon>
-              <div class="method-info">
-                <div class="method-name">支付宝</div>
-                <div class="method-desc">暂未开通</div>
-              </div>
-            </div>
-          </el-radio>
-          <el-radio value="wechat" border disabled>
-            <div class="method-item">
-              <el-icon class="method-icon"><ChatDotRound /></el-icon>
-              <div class="method-info">
-                <div class="method-name">微信支付</div>
-                <div class="method-desc">暂未开通</div>
-              </div>
-            </div>
-          </el-radio>
-        </el-radio-group>
+          </div>
+        </div>
       </div>
 
       <el-alert
-        v-if="Number(balance) < Number(orderInfo.total_amount)"
-        title="余额不足，无法支付"
+        v-if="insufficientBalance"
+        title="余额不足，请先到钱包充值"
         type="error"
         show-icon
         :closable="false"
         style="margin-top: 16px"
       >
         <template #default>
-          <div>当前余额：¥{{ Number(balance).toFixed(2) }}</div>
-          <div>需要支付：¥{{ Number(orderInfo.total_amount || 0).toFixed(2) }}</div>
-          <div>还需充值：¥{{ (Number(orderInfo.total_amount || 0) - Number(balance)).toFixed(2) }}</div>
+          <div>当前余额：￥{{ Number(balance || 0).toFixed(2) }}</div>
+          <div>应付金额：￥{{ orderAmount.toFixed(2) }}</div>
+          <div>还需充值：￥{{ (orderAmount - Number(balance || 0)).toFixed(2) }}</div>
         </template>
       </el-alert>
 
       <div class="payment-actions">
-        <el-button size="large" @click="$router.back()">取消</el-button>
+        <el-button size="large" @click="$router.back()">返回</el-button>
+        <el-button size="large" @click="goWallet" :disabled="!insufficientBalance">
+          去充值
+        </el-button>
         <el-button
           type="primary"
           size="large"
           @click="handlePay"
           :loading="paying"
-          :disabled="Number(balance) < Number(orderInfo.total_amount)"
+          :disabled="insufficientBalance || loading"
         >
-          确认支付 ¥{{ Number(orderInfo.total_amount || 0).toFixed(2) }}
+          确认支付 ￥{{ orderAmount.toFixed(2) }}
         </el-button>
       </div>
     </el-card>
@@ -113,11 +95,12 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ShoppingBag, Wallet, CreditCard, ChatDotRound } from '@element-plus/icons-vue'
+import { ShoppingBag, Wallet } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import http from '@/utils/http'
+import authStorage from '@/utils/auth'
 
 const route = useRoute()
 const router = useRouter()
@@ -125,23 +108,23 @@ const loading = ref(true)
 const paying = ref(false)
 const orderInfo = ref({})
 const balance = ref(0)
-const paymentMethod = ref('balance')
+
+const orderAmount = computed(() => Number(orderInfo.value.total_amount || 0))
+const insufficientBalance = computed(() => Number(balance.value || 0) < orderAmount.value)
 
 const loadOrder = async () => {
   loading.value = true
   try {
     const res = await http.get(`/order/info/${route.params.id}`)
     orderInfo.value = res.data?.data || {}
-    
-    // 确保 total_amount 是数字类型
     orderInfo.value.total_amount = Number(orderInfo.value.total_amount || 0)
 
     if (orderInfo.value.status !== '未支付') {
-      ElMessage.warning('订单状态异常')
+      ElMessage.warning('该订单当前状态不能支付')
       router.back()
     }
   } catch (e) {
-    ElMessage.error('加载订单失败')
+    ElMessage.error('获取订单信息失败')
     router.back()
   } finally {
     loading.value = false
@@ -151,52 +134,34 @@ const loadOrder = async () => {
 const loadBalance = async () => {
   try {
     const res = await http.get('/wallet/balance')
-    console.log('余额API响应:', res.data)
-    
-    if (res.data?.code === 500 && res.data?.msg?.includes('仅校园用户支持钱包功能')) {
-      ElMessage.error('登录信息已过期，请重新登录')
-      setTimeout(() => {
-        localStorage.clear()
-        router.push('/login')
-      }, 2000)
-      return
-    }
-    
-    // 确保 balance 是数字类型
     balance.value = Number(res.data?.data?.balance || 0)
-    console.log('当前余额:', balance.value, '订单金额:', orderInfo.value.total_amount)
   } catch (e) {
-    console.error('获取余额失败:', e)
-    console.error('错误详情:', e.response?.data)
-    
-    if (e.response?.data?.msg?.includes('仅校园用户支持钱包功能')) {
-      ElMessage.error('登录信息已过期，请重新登录')
-      setTimeout(() => {
-        localStorage.clear()
-        router.push('/login')
-      }, 2000)
+    if (e.response?.status === 401 || e.response?.data?.msg?.includes('登录')) {
+      ElMessage.error('登录已失效，请重新登录')
+      authStorage.clear()
+      router.push('/login')
+      return
     }
     balance.value = 0
   }
 }
 
+const goWallet = () => {
+  router.push('/front/wallet')
+}
+
 const handlePay = async () => {
-  const orderAmount = Number(orderInfo.value.total_amount || 0)
-  const currentBalance = Number(balance.value || 0)
-  
-  console.log('支付检查 - 余额:', currentBalance, '订单金额:', orderAmount)
-  
-  if (currentBalance < orderAmount) {
-    ElMessage.warning(`余额不足，无法支付。当前余额：¥${currentBalance.toFixed(2)}，需要：¥${orderAmount.toFixed(2)}`)
+  if (insufficientBalance.value) {
+    ElMessage.warning('余额不足，请先充值')
     return
   }
 
   try {
     await ElMessageBox.confirm(
-      `确认支付 ¥${orderAmount.toFixed(2)} 吗？`,
+      `确认使用余额支付 ￥${orderAmount.value.toFixed(2)} 吗？`,
       '确认支付',
       {
-        confirmButtonText: '确认',
+        confirmButtonText: '确认支付',
         cancelButtonText: '取消',
         type: 'warning'
       }
@@ -204,16 +169,15 @@ const handlePay = async () => {
 
     paying.value = true
     await http.post('/wallet/pay', { orderid: orderInfo.value.order_no })
-
     ElMessage.success('支付成功')
-
-    // 跳转到订单详情
+    window.dispatchEvent(new Event('balance-updated'))
     setTimeout(() => {
       router.push('/front/orders')
-    }, 1000)
+    }, 800)
   } catch (e) {
     if (e !== 'cancel') {
       ElMessage.error(e.response?.data?.msg || '支付失败')
+      await loadBalance()
     }
   } finally {
     paying.value = false
@@ -221,8 +185,8 @@ const handlePay = async () => {
 }
 
 onMounted(async () => {
-  await loadOrder()  // 先加载订单
-  await loadBalance() // 再加载余额，这样可以正确比较
+  await loadOrder()
+  await loadBalance()
 })
 </script>
 
@@ -290,7 +254,7 @@ onMounted(async () => {
   color: #ff4d4f;
 }
 
-.payment-methods {
+.payment-method {
   margin-top: 24px;
 }
 
@@ -301,29 +265,17 @@ onMounted(async () => {
   color: #1a1a1a;
 }
 
-.method-list {
-  width: 100%;
-}
-
-.method-list :deep(.el-radio) {
-  width: 100%;
-  margin-right: 0;
-  margin-bottom: 12px;
+.balance-method {
   padding: 16px;
-  border-radius: 8px;
-  height: auto;
-}
-
-.method-list :deep(.el-radio.is-bordered.is-checked) {
-  border-color: #409eff;
+  border: 1px solid #409eff;
   background: #f0f7ff;
+  border-radius: 8px;
 }
 
 .method-item {
   display: flex;
   align-items: center;
   gap: 12px;
-  width: 100%;
 }
 
 .method-icon {
@@ -345,7 +297,7 @@ onMounted(async () => {
 
 .method-desc {
   font-size: 12px;
-  color: #999;
+  color: #666;
 }
 
 .payment-actions {

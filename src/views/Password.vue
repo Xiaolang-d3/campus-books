@@ -22,8 +22,9 @@
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import http from '@/utils/http'
+import authStorage from '@/utils/auth'
 
-const tableName = localStorage.getItem('tableName') || 'users'
+const tableName = authStorage.get('tableName') || 'users'
 const formRef = ref()
 const form = reactive({ oldPassword: '', newPassword: '', confirmPassword: '' })
 const userInfo = ref({})

@@ -1,20 +1,24 @@
 <template>
   <div class="wallet-container">
-    <!-- 余额卡片 -->
     <el-card class="balance-card" shadow="never">
       <div class="balance-header">
         <div class="balance-info">
-          <div class="balance-label">账户余额</div>
-          <div class="balance-amount">¥{{ balance.toFixed(2) }}</div>
+          <div class="balance-label">当前余额</div>
+          <div class="balance-amount">￥{{ Number(balance || 0).toFixed(2) }}</div>
         </div>
         <el-button type="primary" @click="showRechargeDialog = true">
-          <el-icon><Plus /></el-icon> 充值
+          <el-icon><Plus /></el-icon>
+          充值
         </el-button>
       </div>
     </el-card>
 
-    <!-- 充值对话框 -->
-    <el-dialog v-model="showRechargeDialog" title="充值" width="400px" :close-on-click-modal="false">
+    <el-dialog
+      v-model="showRechargeDialog"
+      title="支付宝充值"
+      width="400px"
+      :close-on-click-modal="false"
+    >
       <el-form :model="rechargeForm" :rules="rechargeRules" ref="rechargeFormRef" label-width="80px">
         <el-form-item label="充值金额" prop="amount">
           <el-input-number
@@ -28,7 +32,7 @@
         </el-form-item>
         <div class="recharge-tip">
           <el-icon><InfoFilled /></el-icon>
-          <span>单次充值金额不能超过 10000 元</span>
+          <span>充值会生成支付宝二维码，扫码支付成功后自动入账余额。</span>
         </div>
         <div class="quick-amounts">
           <el-button v-for="amt in [50, 100, 200, 500]" :key="amt" @click="rechargeForm.amount = amt">
@@ -38,15 +42,47 @@
       </el-form>
       <template #footer>
         <el-button @click="showRechargeDialog = false">取消</el-button>
-        <el-button type="primary" @click="handleRecharge" :loading="recharging">确认充值</el-button>
+        <el-button type="primary" @click="handleRecharge" :loading="recharging">
+          生成支付宝二维码
+        </el-button>
       </template>
     </el-dialog>
 
-    <!-- 流水记录 -->
+    <el-dialog
+      v-model="qrDialogVisible"
+      title="支付宝扫码充值"
+      width="420px"
+      :close-on-click-modal="false"
+      @closed="stopRechargePolling"
+    >
+      <div class="qr-pay-box">
+        <canvas ref="qrCanvas" class="qr-canvas" />
+        <div class="qr-order">充值单号：{{ rechargePayInfo.rechargeNo }}</div>
+        <div class="qr-amount">￥{{ Number(rechargePayInfo.amount || 0).toFixed(2) }}</div>
+        <el-alert
+          :title="qrPayStatus"
+          type="info"
+          show-icon
+          :closable="false"
+          class="qr-status"
+        />
+      </div>
+      <template #footer>
+        <el-button @click="qrDialogVisible = false">关闭</el-button>
+        <el-button
+          type="primary"
+          :loading="qrChecking"
+          @click="rechargePayInfo.mockPay ? mockRechargePayment() : checkRechargePayment(true)"
+        >
+          {{ rechargePayInfo.mockPay ? '确认支付' : '我已支付，查询结果' }}
+        </el-button>
+      </template>
+    </el-dialog>
+
     <el-card class="logs-card" shadow="never">
       <template #header>
         <div class="card-header">
-          <span>交易记录</span>
+          <span>钱包明细</span>
           <el-button text @click="loadLogs">
             <el-icon><Refresh /></el-icon>
           </el-button>
@@ -62,7 +98,7 @@
         </template>
 
         <template #default>
-          <el-empty v-if="!logs.length" description="暂无交易记录" />
+          <el-empty v-if="!logs.length" description="暂无钱包明细" />
           <div v-else class="logs-list">
             <div v-for="log in logs" :key="log.id" class="log-item">
               <div class="log-icon" :class="getLogTypeClass(log.type)">
@@ -74,10 +110,10 @@
               <div class="log-content">
                 <div class="log-title">{{ log.remark }}</div>
                 <div class="log-time">{{ log.addtime }}</div>
-                <div v-if="log.orderid" class="log-order">订单号：{{ log.orderid }}</div>
+                <div v-if="log.orderid" class="log-order">单号：{{ log.orderid }}</div>
               </div>
               <div class="log-amount" :class="log.amount > 0 ? 'income' : 'expense'">
-                {{ log.amount > 0 ? '+' : '' }}¥{{ Math.abs(log.amount).toFixed(2) }}
+                {{ log.amount > 0 ? '+' : '' }}￥{{ Math.abs(log.amount).toFixed(2) }}
               </div>
             </div>
           </div>
@@ -99,9 +135,10 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { Refresh, Plus, Minus, RefreshLeft, Money, InfoFilled } from '@element-plus/icons-vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
+import QRCode from 'qrcode'
 import http from '@/utils/http'
 
 const balance = ref(0)
@@ -111,7 +148,6 @@ const page = ref(1)
 const pageSize = 20
 const loading = ref(false)
 
-// 充值相关
 const showRechargeDialog = ref(false)
 const recharging = ref(false)
 const rechargeForm = ref({ amount: 100 })
@@ -119,14 +155,21 @@ const rechargeFormRef = ref(null)
 const rechargeRules = {
   amount: [
     { required: true, message: '请输入充值金额', trigger: 'blur' },
-    { type: 'number', min: 1, max: 10000, message: '充值金额必须在 1-10000 元之间', trigger: 'blur' }
+    { type: 'number', min: 1, max: 10000, message: '充值金额范围为 1-10000 元', trigger: 'blur' }
   ]
 }
+
+const qrDialogVisible = ref(false)
+const qrCanvas = ref(null)
+const rechargePayInfo = ref({})
+const qrPayStatus = ref('请使用支付宝扫码支付，支付完成后系统会自动查询结果。')
+const qrChecking = ref(false)
+let rechargePollTimer = null
 
 const loadBalance = async () => {
   try {
     const res = await http.get('/wallet/balance')
-    balance.value = res.data?.data?.balance || 0
+    balance.value = Number(res.data?.data?.balance || 0)
   } catch (e) {
     console.error(e)
   }
@@ -141,14 +184,14 @@ const loadLogs = async () => {
     logs.value = res.data?.data?.list || []
     total.value = res.data?.data?.total || 0
   } catch (e) {
-    ElMessage.error('加载记录失败')
+    ElMessage.error('获取钱包明细失败')
   } finally {
     loading.value = false
   }
 }
 
 const handleRecharge = async () => {
-  const amount = rechargeForm.value.amount
+  const amount = Number(rechargeForm.value.amount || 0)
   if (!amount || amount <= 0) {
     ElMessage.warning('请输入正确的充值金额')
     return
@@ -159,29 +202,125 @@ const handleRecharge = async () => {
   }
 
   try {
-    await ElMessageBox.confirm(
-      `确认充值 ¥${amount.toFixed(2)} 到您的账户？`,
-      '确认充值',
-      { confirmButtonText: '确认', cancelButtonText: '取消', type: 'warning' }
-    )
-
+    await rechargeFormRef.value?.validate()
     recharging.value = true
-    await http.post('/wallet/recharge', { amount })
+    const res = await http.post('/alipay/recharge/precreate', { amount })
+    if (res.data?.code !== 0) {
+      ElMessage.error(res.data?.msg || '支付宝充值二维码创建失败')
+      return
+    }
+    const qrCode = res.data?.data?.qrCode
+    if (!qrCode) {
+      ElMessage.error(res.data?.msg || '未获取到支付宝充值二维码')
+      return
+    }
 
-    ElMessage.success('充值成功')
+    rechargePayInfo.value = res.data.data
+    qrPayStatus.value = res.data.data?.mockPay
+      ? '当前为本地支付模式，二维码仅用于演示，点击“确认支付”即可完成充值。'
+      : '请使用支付宝扫码支付，支付完成后系统会自动查询结果。'
     showRechargeDialog.value = false
-    rechargeForm.value.amount = 100
-    await loadBalance()
-    await loadLogs()
-    
-    // 触发余额更新事件，通知其他页面刷新
-    window.dispatchEvent(new Event('balance-updated'))
+    qrDialogVisible.value = true
+    await nextTick()
+    await renderQrCode(qrCode)
+    if (!rechargePayInfo.value.mockPay) {
+      startRechargePolling()
+    }
   } catch (e) {
-    if (e !== 'cancel') {
-      ElMessage.error(e.response?.data?.msg || '充值失败')
+    if (e !== false) {
+      ElMessage.error(e.response?.data?.msg || '支付宝充值二维码创建失败')
     }
   } finally {
     recharging.value = false
+  }
+}
+
+const renderQrCode = async (qrCode) => {
+  if (!qrCanvas.value) return
+  await QRCode.toCanvas(qrCanvas.value, qrCode, {
+    width: 240,
+    margin: 1,
+    color: {
+      dark: '#111827',
+      light: '#ffffff'
+    }
+  })
+}
+
+const startRechargePolling = () => {
+  stopRechargePolling()
+  rechargePollTimer = window.setInterval(() => {
+    checkRechargePayment(false)
+  }, 3000)
+}
+
+const stopRechargePolling = () => {
+  if (rechargePollTimer) {
+    window.clearInterval(rechargePollTimer)
+    rechargePollTimer = null
+  }
+}
+
+const checkRechargePayment = async (manual = false) => {
+  if (!rechargePayInfo.value.rechargeId || qrChecking.value) return
+  qrChecking.value = true
+  try {
+    const res = await http.get('/alipay/recharge/query', {
+      params: { rechargeId: rechargePayInfo.value.rechargeId }
+    })
+    if (res.data?.code !== 0) {
+      if (manual) ElMessage.error(res.data?.msg || '查询充值状态失败')
+      return
+    }
+
+    const data = res.data?.data || {}
+    if (data.paid) {
+      stopRechargePolling()
+      qrPayStatus.value = '充值成功，余额已更新。'
+      ElMessage.success('充值成功')
+      qrDialogVisible.value = false
+      rechargeForm.value.amount = 100
+      await loadBalance()
+      await loadLogs()
+      window.dispatchEvent(new Event('balance-updated'))
+      return
+    }
+
+    qrPayStatus.value = data.message || '等待支付完成，请扫码后稍候。'
+    if (manual) ElMessage.info('暂未查询到支付成功，请稍后再试')
+  } catch (e) {
+    if (manual) {
+      ElMessage.error(e.response?.data?.msg || '查询充值状态失败')
+    }
+  } finally {
+    qrChecking.value = false
+  }
+}
+
+const mockRechargePayment = async () => {
+  if (!rechargePayInfo.value.rechargeId || qrChecking.value) return
+  qrChecking.value = true
+  try {
+    const res = await http.post('/alipay/recharge/mockPay', {
+      rechargeId: rechargePayInfo.value.rechargeId
+    })
+    if (res.data?.code !== 0) {
+      ElMessage.error(res.data?.msg || '支付失败')
+      return
+    }
+
+    stopRechargePolling()
+    qrPayStatus.value = '支付成功，余额已更新。'
+    ElMessage.success('支付成功')
+    qrDialogVisible.value = false
+    rechargeForm.value.amount = 100
+    await loadBalance()
+    await loadLogs()
+    window.dispatchEvent(new Event('balance-updated'))
+  } catch (e) {
+    ElMessage.error(e.response?.data?.msg || '支付失败')
+  } finally {
+    qrChecking.value = false
   }
 }
 
@@ -199,6 +338,10 @@ onMounted(() => {
   loadBalance()
   loadLogs()
 })
+
+onUnmounted(() => {
+  stopRechargePolling()
+})
 </script>
 
 <style scoped>
@@ -210,7 +353,7 @@ onMounted(() => {
 .balance-card {
   margin-bottom: 24px;
   border-radius: 12px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: #0f766e;
   color: white;
 }
 
@@ -222,6 +365,7 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 16px;
 }
 
 .balance-label {
@@ -233,18 +377,18 @@ onMounted(() => {
 .balance-amount {
   font-size: 42px;
   font-weight: 700;
-  letter-spacing: 1px;
+  letter-spacing: 0;
 }
 
 .balance-header :deep(.el-button) {
-  background: rgba(255, 255, 255, 0.2);
-  border: 1px solid rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.45);
   color: white;
 }
 
 .balance-header :deep(.el-button:hover) {
-  background: rgba(255, 255, 255, 0.3);
-  border-color: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.26);
+  border-color: rgba(255, 255, 255, 0.6);
 }
 
 .recharge-tip {
@@ -256,7 +400,7 @@ onMounted(() => {
   background: #f6ffed;
   border: 1px solid #b7eb8f;
   border-radius: 4px;
-  color: #52c41a;
+  color: #389e0d;
   font-size: 13px;
 }
 
@@ -269,6 +413,37 @@ onMounted(() => {
 
 .quick-amounts .el-button {
   flex: 1;
+}
+
+.qr-pay-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.qr-canvas {
+  width: 240px;
+  height: 240px;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.qr-order {
+  color: #666;
+  font-size: 13px;
+}
+
+.qr-amount {
+  color: #ff4d4f;
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.qr-status {
+  width: 100%;
 }
 
 .logs-card {
@@ -383,8 +558,21 @@ onMounted(() => {
     padding: 24px;
   }
 
+  .balance-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
   .balance-amount {
     font-size: 36px;
+  }
+
+  .quick-amounts {
+    flex-wrap: wrap;
+  }
+
+  .quick-amounts .el-button {
+    min-width: 40%;
   }
 
   .log-item {

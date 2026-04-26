@@ -14,10 +14,12 @@
 </template>
 
 <script setup>
+import authStorage from '@/utils/auth'
+
 const props = defineProps({ modelValue: String })
 const emit = defineEmits(['update:modelValue'])
 const uploadUrl = '/api/file/upload'
-const headers = { Authorization: `Bearer ${localStorage.getItem('token') || ''}` }
+const headers = authStorage.authHeader()
 const getImg = (v) => v ? (v.startsWith('http') ? v : `/api/file/download/${v}`) : ''
 const onSuccess = (res) => {
   if (res.code === 0 && res.data?.file) {

@@ -93,7 +93,7 @@ const statusType = (s) => ({
   '未支付': 'danger', '已支付': 'warning', '已发货': '', '已完成': 'success', '已退款': 'info'
 }[s] || '')
 
-const payTypeText = (t) => ({ 1: '微信', 2: '支付宝', 3: '余额' }[t] || '-')
+const payTypeText = (t) => ({ 1: '余额', 2: '支付宝' }[t] || '-')
 
 const loadData = async () => {
   const status = route.params.status || ''

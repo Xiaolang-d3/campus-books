@@ -164,8 +164,9 @@ import { onMounted, onUnmounted, ref } from 'vue'
 import { User, Reading, Document, Money, ShoppingCart } from '@element-plus/icons-vue'
 import http from '@/utils/http'
 import * as echarts from 'echarts'
+import authStorage from '@/utils/auth'
 
-const role = localStorage.getItem('role') || 'admin'
+const role = authStorage.get('role') || 'admin'
 const roleMap = { admin: '管理员', yonghu: '校园用户' }
 const roleName = roleMap[role] || role
 const currentTime = ref('')

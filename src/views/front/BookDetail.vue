@@ -137,6 +137,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import http from '@/utils/http'
 import { resolveHierarchyPath } from '@/utils/bookHierarchy'
+import authStorage from '@/utils/auth'
 
 const route = useRoute()
 const router = useRouter()
@@ -152,7 +153,7 @@ const isFav = ref(false)
 const comments = ref([])
 const commentText = ref('')
 const commentRating = ref(5)
-const isLogin = !!localStorage.getItem('token')
+const isLogin = computed(() => authStorage.hasToken())
 
 const getImg = (value) => {
   if (!value) return ''
@@ -214,9 +215,9 @@ const loadComments = async () => {
 }
 
 const checkFav = async () => {
-  if (!isLogin) return
+  if (!isLogin.value) return
   try {
-    const uid = localStorage.getItem('userid')
+    const uid = authStorage.get('userid')
     const { data: res } = await http.get('/favorite/list', {
       params: { page: 1, limit: 1, user_id: uid, book_id: route.params.id },
     })
@@ -227,7 +228,7 @@ const checkFav = async () => {
 }
 
 const ensureLogin = () => {
-  if (isLogin) return true
+  if (isLogin.value) return true
   ElMessage.warning('请先登录')
   router.push('/login')
   return false
@@ -252,7 +253,7 @@ const addToCart = async () => {
       book_cover: book.value.cover,
       quantity: buyNum.value,
       price: book.value.price,
-      userid: Number(localStorage.getItem('userid')),
+      userid: Number(authStorage.get('userid')),
     })
     if (res.code === 0) {
       ElMessage.success('已加入购物车')
@@ -278,7 +279,7 @@ const toggleFav = async () => {
   if (!ensureLogin()) return
   favLoading.value = true
   try {
-    const uid = Number(localStorage.getItem('userid'))
+    const uid = Number(authStorage.get('userid'))
     if (isFav.value) {
       const { data: listRes } = await http.get('/favorite/list', {
         params: { page: 1, limit: 1, user_id: uid, book_id: route.params.id },
@@ -322,7 +323,7 @@ const submitComment = async () => {
   try {
     const { data: res } = await http.post('/review/add', {
       book_id: Number(route.params.id),
-      user_id: Number(localStorage.getItem('userid')),
+      user_id: Number(authStorage.get('userid')),
       rating: commentRating.value,
       content: commentText.value.trim(),
     })

@@ -68,6 +68,7 @@ import { ref, watch } from 'vue'
 import { Plus, Edit, Check, Upload } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { resolveAvatarUrl, getDefaultAvatars } from '@/utils/avatar'
+import authStorage from '@/utils/auth'
 
 const props = defineProps({ modelValue: String })
 const emit = defineEmits(['update:modelValue'])
@@ -76,7 +77,7 @@ const dialogVisible = ref(false)
 const tempAvatar = ref('')
 
 const uploadUrl = '/api/file/upload'
-const headers = { Authorization: `Bearer ${localStorage.getItem('token') || ''}` }
+const headers = authStorage.authHeader()
 
 const defaultAvatars = getDefaultAvatars()
 

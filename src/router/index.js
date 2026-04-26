@@ -1,5 +1,6 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import authStorage from '@/utils/auth'
 
 const routes = [
   {
@@ -64,8 +65,8 @@ const router = createRouter({
 })
 
 router.beforeEach((to, from, next) => {
-  const token = localStorage.getItem('token')
-  const role = localStorage.getItem('role')
+  const token = authStorage.get('token')
+  const role = authStorage.get('role')
   
   // 前台路由需要登录的页面
   if (to.meta?.auth && !token) {

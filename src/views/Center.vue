@@ -50,8 +50,9 @@
 import { onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import http from '@/utils/http'
+import authStorage from '@/utils/auth'
 
-const tableName = localStorage.getItem('tableName') || 'users'
+const tableName = authStorage.get('tableName') || 'users'
 const form = ref({})
 
 onMounted(async () => {

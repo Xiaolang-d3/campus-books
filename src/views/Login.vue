@@ -106,6 +106,7 @@ import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import http from '@/utils/http'
+import authStorage from '@/utils/auth'
 
 const router = useRouter()
 const formRef = ref()
@@ -135,11 +136,12 @@ const handleLogin = () => {
         ElMessage.error(res.msg || '登录失败')
         return
       }
-      localStorage.setItem('token', res.data.token)
-      localStorage.setItem('role', form.role)
-      localStorage.setItem('tableName', form.role === 'admin' ? 'admin' : 'user')
-      localStorage.setItem('userid', res.data.userid)
-      localStorage.setItem('username', res.data.username)
+      authStorage.clear()
+      authStorage.set('token', res.data.token)
+      authStorage.set('role', form.role)
+      authStorage.set('tableName', form.role === 'admin' ? 'admin' : 'user')
+      authStorage.set('userid', res.data.userid)
+      authStorage.set('username', res.data.username)
       ElMessage.success('登录成功，欢迎回来！')
       setTimeout(() => {
         // 管理员跳转到后台，普通用户跳转到前台

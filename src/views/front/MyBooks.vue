@@ -91,6 +91,7 @@ import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import FileUpload from '@/components/FileUpload.vue'
 import http from '@/utils/http'
+import authStorage from '@/utils/auth'
 
 const categories = ref([])
 const conditions = ref([])
@@ -133,7 +134,7 @@ const buildDefaultForm = () => ({
 
 const loadData = async () => {
   try {
-    const uid = localStorage.getItem('userid')
+    const uid = authStorage.get('userid')
     const { data: res } = await http.get('/book/list', {
       params: { ...searchForm, seller_id: uid, page: page.value, limit: 10 },
     })

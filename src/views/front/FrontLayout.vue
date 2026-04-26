@@ -195,21 +195,22 @@ import {
 } from '@element-plus/icons-vue'
 import http from '@/utils/http'
 import { resolveAvatarUrl } from '@/utils/avatar'
+import authStorage from '@/utils/auth'
 
 const router = useRouter()
 const route = useRoute()
-const isLogin = ref(!!localStorage.getItem('token'))
-const username = ref(localStorage.getItem('username') || '')
-const userAvatar = ref(localStorage.getItem('avatar') || '')
+const isLogin = ref(authStorage.hasToken())
+const username = ref(authStorage.get('username') || '')
+const userAvatar = ref(authStorage.get('avatar') || '')
 const cartCount = ref(0)
 const showMobileMenu = ref(false)
 const isScrolled = ref(false)
 const avatarLoaded = ref(false)
 
 const syncUserState = () => {
-  isLogin.value = !!localStorage.getItem('token')
-  username.value = localStorage.getItem('username') || ''
-  const newAvatar = localStorage.getItem('avatar') || ''
+  isLogin.value = authStorage.hasToken()
+  username.value = authStorage.get('username') || ''
+  const newAvatar = authStorage.get('avatar') || ''
   if (newAvatar !== userAvatar.value) {
     userAvatar.value = newAvatar
     avatarLoaded.value = false // 重置加载状态
@@ -241,7 +242,7 @@ const loadCartCount = async () => {
 
 const loadUserInfo = async () => {
   if (!isLogin.value) return
-  const uid = localStorage.getItem('userid')
+  const uid = authStorage.get('userid')
   if (!uid) return
   try {
     const res = await http.get(`/yonghu/info/${uid}`)
@@ -250,14 +251,14 @@ const loadUserInfo = async () => {
       const newAvatar = res.data.data.avatar || ''
       if (newAvatar && newAvatar !== userAvatar.value) {
         userAvatar.value = newAvatar
-        localStorage.setItem('avatar', newAvatar)
+        authStorage.set('avatar', newAvatar)
       }
     }
   } catch {}
 }
 
 const handleLogout = () => {
-  localStorage.clear()
+  authStorage.clear()
   isLogin.value = false
   username.value = ''
   userAvatar.value = ''

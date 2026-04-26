@@ -282,6 +282,7 @@ import {
   ChatDotRound
 } from '@element-plus/icons-vue'
 import http from '@/utils/http'
+import authStorage from '@/utils/auth'
 
 const router = useRouter()
 
@@ -303,7 +304,7 @@ const quickActions = [
 
 const getImg = (v) => v ? (v.startsWith('http') ? v : `/api/file/download/${v}`) : '/placeholder-book.png'
 
-const isLoggedIn = () => Boolean(localStorage.getItem('token'))
+const isLoggedIn = () => authStorage.hasToken()
 
 const goLogin = () => {
   router.push('/login')
