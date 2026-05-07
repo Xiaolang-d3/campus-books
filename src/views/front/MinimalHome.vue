@@ -148,6 +148,7 @@ const loading = ref(true)
 const books = ref([])
 const total = ref(0)
 const categories = ref([])
+const collegeCount = ref(0)
 const searchQuery = ref('')
 const recommendations = ref([])
 
@@ -156,7 +157,7 @@ const quickTags = ['计算机', '文学', '经济', '数学', '物理']
 const stats = computed(() => [
   { value: total.value, label: '在售书籍' },
   { value: categories.value.length, label: '书籍分类' },
-  { value: '4', label: '学院覆盖' }
+  { value: collegeCount.value, label: '学院覆盖' }
 ])
 
 const features = [
@@ -228,13 +229,15 @@ onMounted(async () => {
   const recommendPromise = loadRecommendations()
 
   try {
-    const [booksRes, categoriesRes] = await Promise.all([
+    const [booksRes, categoriesRes, collegesRes] = await Promise.all([
       http.get('/book/list', { params: { page: 1, limit: 8, sort: 'addtime', order: 'desc' } }),
-      http.get('/bookCategory/option')
+      http.get('/bookCategory/option'),
+      http.get('/college/list')
     ])
     books.value = booksRes.data?.data?.list || []
     total.value = booksRes.data?.data?.total || 0
     categories.value = categoriesRes.data?.data || []
+    collegeCount.value = collegesRes.data?.data?.length || 0
   } catch (e) {
     console.error('首页基础数据加载失败', e)
   } finally {
