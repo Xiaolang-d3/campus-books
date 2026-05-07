@@ -72,7 +72,7 @@ def send():
         if should_recommend:
             source = 'keyword'
             books = ChatService.search_books_for_ai(book_terms, limit=5, user_id=user_id) if book_terms else []
-            if not books:
+            if not books and not book_terms:
                 source = 'profile'
                 books = ChatService.get_profile_recommendations(user_id, limit=5)
 
