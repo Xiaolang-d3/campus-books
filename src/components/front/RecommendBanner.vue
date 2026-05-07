@@ -208,8 +208,9 @@ const handleChange = (index) => {
 
 .card-cover {
   position: relative;
-  width: 148px;
-  min-width: 148px;
+  width: 162px;
+  min-width: 162px;
+  height: 244px;
   flex-shrink: 0;
   border-radius: 12px;
   overflow: hidden;
@@ -220,6 +221,7 @@ const handleChange = (index) => {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: center center;
   transition: transform 0.35s ease;
 }
 
@@ -416,8 +418,9 @@ const handleChange = (index) => {
   }
 
   .card-cover {
-    width: 132px;
-    min-width: 132px;
+    width: 146px;
+    min-width: 146px;
+    height: 220px;
   }
 
   .card-inner {
@@ -476,7 +479,7 @@ const handleChange = (index) => {
   .card-cover {
     width: 100%;
     min-width: 100%;
-    height: 156px;
+    height: 190px;
   }
 
   .card-title {
