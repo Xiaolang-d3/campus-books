@@ -214,23 +214,34 @@ const searchByCategory = (category) => {
   router.push({ path: '/front/books', query: { category_id: String(category.id) } })
 }
 
+const loadRecommendations = async () => {
+  try {
+    const recommendRes = await http.get('/recommend/home')
+    recommendations.value = recommendRes.data?.data?.recommendations || []
+  } catch (e) {
+    console.error('首页推荐加载失败', e)
+  }
+}
+
 onMounted(async () => {
   loading.value = true
+  const recommendPromise = loadRecommendations()
+
   try {
-    const [booksRes, categoriesRes, recommendRes] = await Promise.all([
+    const [booksRes, categoriesRes] = await Promise.all([
       http.get('/book/list', { params: { page: 1, limit: 8, sort: 'addtime', order: 'desc' } }),
-      http.get('/bookCategory/option'),
-      http.get('/recommend/home')
+      http.get('/bookCategory/option')
     ])
     books.value = booksRes.data?.data?.list || []
     total.value = booksRes.data?.data?.total || 0
     categories.value = categoriesRes.data?.data || []
-    recommendations.value = recommendRes.data?.data?.recommendations || []
   } catch (e) {
-    console.error('首页数据加载失败', e)
+    console.error('首页基础数据加载失败', e)
   } finally {
     loading.value = false
   }
+
+  await recommendPromise
 })
 </script>
 
