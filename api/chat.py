@@ -1,5 +1,4 @@
 import logging
-import re
 from flask import Blueprint, request
 from common import R_ok, R_error
 from core import login_required_custom, get_jwt_identity
@@ -62,23 +61,27 @@ def send():
         messages = ChatService.get_session_messages(session_id, user_id)
         history = [{'role': m['role'], 'content': m['content']} for m in messages[-20:]]
 
-        # 检查是否需要推荐书籍
-        book_keywords = ['推荐', '找书', '买书', '教材', '书籍', '有什么', '哪些书']
-        should_recommend = any(keyword in message for keyword in book_keywords)
+        # 检查是否需要推荐书籍，并提取检索关键词
+        book_terms = extract_book_keywords(message)
+        should_recommend = is_book_recommendation_intent(message, book_terms)
 
         reply_content = None
         content_type = 'text'
         metadata = None
 
         if should_recommend:
-            # 提取关键词进行书籍搜索
-            search_query = extract_book_keywords(message)
-            if search_query:
-                books = ChatService.search_books_for_ai(search_query, limit=5)
-                if books:
-                    content_type = 'book_list'
-                    metadata = {'books': books}
-                    reply_content = generate_book_recommendation_text(books, message)
+            source = 'keyword'
+            books = ChatService.search_books_for_ai(book_terms, limit=5, user_id=user_id) if book_terms else []
+            if not books:
+                source = 'profile'
+                books = ChatService.get_profile_recommendations(user_id, limit=5)
+
+            if books:
+                content_type = 'book_list'
+                metadata = {'books': books, 'source': source, 'keywords': book_terms}
+                reply_content = generate_book_recommendation_text(books, message, source, book_terms)
+            else:
+                reply_content = generate_no_book_found_text(book_terms)
 
         # 如果没有找到书籍或不需要推荐，使用通用回复
         if not reply_content:
@@ -169,24 +172,42 @@ def delete_session(session_id):
 
 def extract_book_keywords(message):
     """从用户消息中提取书籍关键词"""
-    # 移除常见的问句词
-    message = re.sub(r'(推荐|有什么|哪些|买|找|需要|想要|帮我|给我)', '', message)
-    message = re.sub(r'(书|教材|书籍)', '', message)
-    message = message.strip()
-    
-    # 如果剩余内容太短，返回None
-    if len(message) < 2:
-        return None
-    
-    return message
+    return ChatService.extract_book_terms(message)
 
 
-def generate_book_recommendation_text(books, user_message):
+def is_book_recommendation_intent(message, terms=None):
+    """判断用户是否在找平台书籍或教材推荐。"""
+    non_book_keywords = ['支付', '充值', '余额', '订单', '购物车', '物流', '发货', '退款', '发布', '上架', '出售']
+    book_context_keywords = ['推荐', '找书', '书', '教材', '资料', '课程', '参考书']
+    if any(keyword in message for keyword in non_book_keywords) and not any(keyword in message for keyword in book_context_keywords):
+        return False
+
+    guide_keywords = ['流程', '怎么', '如何', '下单', '支付', '购物车', '订单']
+    recommend_keywords = ['推荐', '教材', '书籍', '参考书', '资料', '有什么', '哪些书', '有没有']
+    if any(keyword in message for keyword in guide_keywords) and not any(keyword in message for keyword in recommend_keywords):
+        return False
+
+    intent_keywords = [
+        '推荐', '找书', '买书', '购书', '教材', '书籍', '参考书', '资料',
+        '有什么', '哪些书', '有没有', '有吗', '想学', '入门', '课程',
+        '专业', '考研', '考试', '复习'
+    ]
+    if any(keyword in message for keyword in intent_keywords):
+        return True
+    return bool(terms) and any(word in message for word in ['学', '课', '书'])
+
+
+def generate_book_recommendation_text(books, user_message, source='keyword', keywords=None):
     """生成书籍推荐的文本回复"""
     if not books:
         return "抱歉，暂时没有找到相关的书籍。你可以换个关键词试试，或者直接去书籍列表浏览。"
-    
-    intro = "根据你的需求，我为你找到了以下几本书：\n\n"
+
+    if source == 'profile':
+        intro = "我结合你的专业、课程信息、浏览/收藏偏好和平台最新上架，在平台里为你挑了这几本：\n\n"
+    elif keywords:
+        intro = f"根据“{'、'.join(keywords)}”这些关键词，我在平台里找到了以下几本书：\n\n"
+    else:
+        intro = "根据你的需求，我为你找到了以下几本书：\n\n"
     
     book_list = []
     for i, book in enumerate(books, 1):
@@ -208,6 +229,13 @@ def generate_book_recommendation_text(books, user_message):
         book_list.append(book_info)
     
     return intro + "\n".join(book_list) + "\n\n你可以点击下方的书籍卡片查看详情或直接购买。"
+
+
+def generate_no_book_found_text(keywords=None):
+    """推荐意图明确但平台没有可推荐书籍时的兜底回复。"""
+    if keywords:
+        return f"平台暂时没有找到和“{'、'.join(keywords)}”直接匹配的上架书籍。你可以换成书名、作者、课程名再试一次，也可以去书籍列表浏览最新上架。"
+    return "我暂时没有根据你的画像找到合适的上架书籍。你可以告诉我具体课程、书名、作者或学习方向，我再帮你在平台里找。"
 
 
 def generate_ai_reply(message, history):
