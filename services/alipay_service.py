@@ -135,7 +135,6 @@ class AlipayService:
             raise ValueError('单次充值金额不能超过 10000')
 
         config = AlipayService._config()
-        AlipayService._ensure_ready(config, require_return_url=False, require_notify_url=False)
 
         recharge = WalletRecharge(
             recharge_no=AlipayService._make_recharge_no(),
@@ -196,6 +195,13 @@ class AlipayService:
             }
 
         config = AlipayService._config()
+        if config.get('mock_pay'):
+            return {
+                'paid': False,
+                'status': AlipayService.WAITING_STATUS,
+                'message': '模拟支付待完成，请点击模拟支付按钮完成充值',
+            }
+
         AlipayService._ensure_ready(config, require_return_url=False, require_notify_url=False)
         response = AlipayService._execute('alipay.trade.query', {'out_trade_no': recharge.recharge_no}, config)
         data = response.get('alipay_trade_query_response') or {}
