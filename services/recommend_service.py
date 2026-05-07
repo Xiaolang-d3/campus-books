@@ -174,7 +174,7 @@ class RecommendService:
                 'temperature': temperature,
             }
 
-            response = requests.post(url, headers=headers, json=payload, timeout=15)
+            response = requests.post(url, headers=headers, json=payload, timeout=3)
             response.raise_for_status()
 
             result = response.json()
