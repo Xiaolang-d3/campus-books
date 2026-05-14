@@ -4,7 +4,7 @@ server:
   debug: true
 
 database:
-  uri: mysql+pymysql://root:root@127.0.0.1:3306/secondhand_books?charset=utf8mb4
+  uri: mysql+pymysql://root:123456@127.0.0.1:3306/secondhand_books?charset=utf8mb4
   track_modifications: false
 
 jwt:

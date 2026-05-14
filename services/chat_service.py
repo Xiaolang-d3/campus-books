@@ -7,6 +7,8 @@ from utils import model_to_dict, generate_id
 
 
 class ChatService:
+    SINGLE_CHAR_BOOK_TERMS = {'C', 'R'}
+
     BOOK_STOP_WORDS = [
         '推荐', '找书', '买书', '购书', '书籍', '教材', '书', '有什么', '哪些',
         '有没有', '有吗', '需要', '想要', '想买', '想学', '帮我', '给我',
@@ -139,13 +141,13 @@ class ChatService:
         if not text:
             return []
 
-        normalized = re.sub(r'[，。！？、；：,.!?;:（）()【】\[\]《》<>“”"\'`~\-_/|]+', ' ', text)
+        normalized = re.sub(r'[^\w\u4e00-\u9fff+#.]+', ' ', text)
         for word in ChatService.BOOK_STOP_WORDS:
             normalized = normalized.replace(word, ' ')
         terms = []
         for term in normalized.split():
             term = term.strip()
-            if len(term) >= 2 and term not in ChatService.BOOK_STOP_WORDS:
+            if ChatService._is_valid_book_term(term):
                 terms.append(term)
                 terms.extend(re.findall(r'[A-Za-z0-9][A-Za-z0-9+#.]*', term))
 
@@ -154,9 +156,15 @@ class ChatService:
     @staticmethod
     def search_books_for_ai(query, limit=5, user_id=None):
         """为AI搜索平台书籍，支持多关键词和分类/出版社匹配。"""
-        terms = query if isinstance(query, list) else ChatService.extract_book_terms(query)
+        terms = query if isinstance(query, list) else [query, *ChatService.extract_book_terms(query)]
         books = ChatService._search_book_models(terms, limit=limit * 8, user_id=user_id)
         return ChatService._format_books(books[:limit])
+
+    @staticmethod
+    def _is_valid_book_term(term):
+        if not term or term in ChatService.BOOK_STOP_WORDS:
+            return False
+        return len(term) >= 2 or term.upper() in ChatService.SINGLE_CHAR_BOOK_TERMS
 
     @staticmethod
     def get_profile_recommendations(user_id, limit=5):
@@ -311,7 +319,7 @@ class ChatService:
         seen = set()
         for term in terms or []:
             term = str(term or '').strip()
-            if len(term) < 2 or term in seen:
+            if term in seen or not ChatService._is_valid_book_term(term):
                 continue
             seen.add(term)
             result.append(term)

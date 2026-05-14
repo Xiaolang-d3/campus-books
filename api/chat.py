@@ -1,5 +1,6 @@
 import logging
-from flask import Blueprint, request
+import requests
+from flask import Blueprint, current_app, request
 from common import R_ok, R_error
 from core import login_required_custom, get_jwt_identity
 from services.chat_service import ChatService
@@ -48,7 +49,7 @@ def send():
         session_id = data.get('session_id')
         if session_id:
             session = ChatService.get_session_messages(session_id, user_id)
-            if not session:
+            if session is None:
                 return R_error('会话不存在')
         else:
             session = ChatService.get_or_create_session(user_id)
@@ -59,7 +60,7 @@ def send():
 
         # 获取历史消息（最近10轮）
         messages = ChatService.get_session_messages(session_id, user_id)
-        history = [{'role': m['role'], 'content': m['content']} for m in messages[-20:]]
+        history = [{'role': m['role'], 'content': m['content']} for m in messages[-21:-1]]
 
         # 检查是否需要推荐书籍，并提取检索关键词
         book_terms = extract_book_keywords(message)
@@ -68,6 +69,8 @@ def send():
         reply_content = None
         content_type = 'text'
         metadata = None
+        books = []
+        source = None
 
         if should_recommend:
             source = 'keyword'
@@ -75,17 +78,33 @@ def send():
             if not books and not book_terms:
                 source = 'profile'
                 books = ChatService.get_profile_recommendations(user_id, limit=5)
-
+        elif book_terms:
+            source = 'direct_title'
+            books = ChatService.search_books_for_ai(message, limit=5, user_id=user_id)
             if books:
-                content_type = 'book_list'
-                metadata = {'books': books, 'source': source, 'keywords': book_terms}
-                reply_content = generate_book_recommendation_text(books, message, source, book_terms)
-            else:
-                reply_content = generate_no_book_found_text(book_terms)
+                should_recommend = True
+
+        if should_recommend and books:
+            content_type = 'book_list'
+            metadata = {'books': books, 'source': source, 'keywords': book_terms}
 
         # 如果没有找到书籍或不需要推荐，使用通用回复
+        reply_content = generate_llm_reply(
+            message=message,
+            history=history,
+            books=books,
+            should_recommend=should_recommend,
+            keywords=book_terms,
+            source=source,
+        )
+
         if not reply_content:
-            reply_content = generate_ai_reply(message, history)
+            if should_recommend and books:
+                reply_content = generate_book_recommendation_text(books, message, source, book_terms)
+            elif should_recommend:
+                reply_content = generate_no_book_found_text(book_terms)
+            else:
+                reply_content = generate_ai_reply(message, history)
 
         # 保存AI回复
         ChatService.save_message(session_id, 'assistant', reply_content, content_type, metadata)
@@ -142,7 +161,7 @@ def create_session():
         identity = get_jwt_identity()
         user_id = identity['id']
         
-        data = request.json or {}
+        data = request.get_json(silent=True) or {}
         title = data.get('title', '新对话')
         
         session = ChatService.create_session(user_id, title)
@@ -168,6 +187,125 @@ def delete_session(session_id):
     except Exception as e:
         logger.exception('删除会话异常: %s', e)
         return R_error('删除会话失败')
+
+
+def generate_llm_reply(message, history, books=None, should_recommend=False, keywords=None, source=None):
+    """Generate a conversational reply with DashScope, grounded in platform data."""
+    api_key = current_app.config.get('DASHSCOPE_API_KEY', '')
+    if not api_key:
+        logger.warning('DashScope API Key is not configured; using local chat fallback')
+        return None
+
+    try:
+        url = current_app.config.get('DASHSCOPE_BASE_URL') + '/chat/completions'
+        model = current_app.config.get('DASHSCOPE_MODEL', 'qwen-turbo')
+        max_tokens = max(600, int(current_app.config.get('DASHSCOPE_MAX_TOKENS', 600)))
+        temperature = current_app.config.get('DASHSCOPE_TEMPERATURE', 0.7)
+
+        payload = {
+            'model': model,
+            'messages': build_llm_messages(message, history, books or [], should_recommend, keywords or [], source),
+            'max_tokens': max_tokens,
+            'temperature': temperature,
+        }
+        headers = {
+            'Authorization': f'Bearer {api_key}',
+            'Content-Type': 'application/json',
+        }
+
+        response = requests.post(url, headers=headers, json=payload, timeout=8)
+        response.raise_for_status()
+        result = response.json()
+        choices = result.get('choices', [])
+        if not choices:
+            logger.warning('DashScope chat returned no choices: %s', result)
+            return None
+
+        content = choices[0].get('message', {}).get('content', '')
+        return content.strip() or None
+    except requests.exceptions.Timeout:
+        logger.error('DashScope chat request timed out')
+        return None
+    except requests.exceptions.RequestException as e:
+        logger.error('DashScope chat request failed: %s', e)
+        return None
+    except Exception as e:
+        logger.exception('DashScope chat generation failed: %s', e)
+        return None
+
+
+def build_llm_messages(message, history, books, should_recommend, keywords, source):
+    """Build OpenAI-compatible chat messages for DashScope."""
+    system_prompt = (
+        '你是校园二手书交易平台的 AI 助手“小书”。'
+        '你的职责是帮助学生找教材、比较书籍、解释购买流程、发布流程、订单和平台使用问题。'
+        '回答要自然、简洁、可靠，使用中文。'
+        '如果用户要推荐或找书，只能基于“平台可用书籍”推荐，不要编造平台不存在的书。'
+        '如果平台没有匹配书籍，要说明暂时没有找到，并引导用户换书名、作者、课程或专业关键词。'
+        '如果提供了平台书籍数据，优先结合价格、成色、库存和类别给出选择理由。'
+        '不要声称自己已经完成下单、支付、退款、发货等真实操作。'
+    )
+
+    context = build_platform_context(books, should_recommend, keywords, source)
+    messages = [{'role': 'system', 'content': system_prompt}]
+
+    for item in normalize_history(history)[-10:]:
+        messages.append(item)
+
+    user_content = message
+    if context:
+        user_content = f'{message}\n\n平台上下文：\n{context}'
+    messages.append({'role': 'user', 'content': user_content})
+    return messages
+
+
+def normalize_history(history):
+    result = []
+    for item in history or []:
+        role = item.get('role')
+        content = (item.get('content') or '').strip()
+        if role not in ('user', 'assistant') or not content:
+            continue
+        result.append({'role': role, 'content': content[:1200]})
+    return result
+
+
+def build_platform_context(books, should_recommend, keywords, source):
+    lines = []
+    if should_recommend:
+        lines.append('用户当前有找书或推荐书籍意图。')
+    if keywords:
+        lines.append('提取到的关键词：' + '、'.join(keywords))
+    if source:
+        source_labels = {
+            'keyword': '用户关键词',
+            'direct_title': '直接书名匹配',
+            'profile': '用户画像和浏览收藏偏好',
+        }
+        lines.append('推荐来源：' + source_labels.get(source, source))
+
+    if books:
+        lines.append('平台可用书籍：')
+        for index, book in enumerate(books, 1):
+            price = float(book.get('price') or 0)
+            original_price = float(book.get('original_price') or 0)
+            parts = [
+                f'{index}. {book.get("title") or "未命名"}',
+                f'作者：{book.get("author") or "未知"}',
+                f'价格：{price:.2f}',
+                f'库存：{book.get("stock", 0)}',
+            ]
+            if original_price > price:
+                parts.append(f'原价：{original_price:.2f}')
+            if book.get('condition'):
+                parts.append(f'成色：{book.get("condition")}')
+            if book.get('category'):
+                parts.append(f'分类：{book.get("category")}')
+            lines.append('；'.join(parts))
+    elif should_recommend:
+        lines.append('平台当前没有检索到匹配的上架书籍。')
+
+    return '\n'.join(lines)
 
 
 def extract_book_keywords(message):
