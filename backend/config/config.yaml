@@ -1,0 +1,47 @@
+server:
+  host: 0.0.0.0
+  port: 8081
+  debug: true
+
+database:
+  uri: mysql+pymysql://root:123456@127.0.0.1:3306/secondhand_books?charset=utf8mb4
+  track_modifications: false
+
+jwt:
+  secret_key: jwt-secret-key-campus-books-2024-secure
+  access_token_expires: 86400  # 24 hours
+
+upload:
+  max_content_length: 314572800  # 300MB
+
+# AI 推荐配置
+ai:
+  dashscope:
+    api_key: "sk-6f8ee11e9d3149daaaf7c9819830cbeb"  # 需要填写你的阿里云 DashScope API Key
+    model: "qwen-turbo"  # 模型：qwen-turbo, qwen-plus, qwen-max 等
+    base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    max_tokens: 200
+    temperature: 0.8
+    cache_ttl: 600  # 缓存时间（秒），默认10分钟
+
+# 书籍封面API配置
+book_cover:
+  isbn_work:
+    api_key: "ae1718d4587744b0b79f940fbef69e77"  # ISBN.work API Key（中文图书封面）
+    # 如需申请自己的API Key，请联系微信: 809137232
+
+# 支付宝沙箱二维码支付配置
+# 当前前端使用“订单二维码 + 轮询查询”模式，本地运行不需要 notify_url/return_url。
+# 你只需要填写沙箱 app_id，并把密钥文件放到 keys 目录后启用 enabled。
+alipay:
+  enabled: true
+  gateway: "https://openapi-sandbox.dl.alipaydev.com/gateway.do"
+  app_id: "9021000163607145"
+  app_private_key_path: "D:/project/campus-books-trading-platform/campus-books-backend/keys/alipay_app_private_key.pem"
+  alipay_public_key_path: "D:/project/campus-books-trading-platform/campus-books-backend/keys/alipay_public_key.pem"
+  notify_url: ""
+  return_url: ""
+  timeout_express: "30m"
+  mock_pay: true
+
+secret_key: dev-secret-key-change-in-production
